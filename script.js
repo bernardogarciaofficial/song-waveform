@@ -3,6 +3,11 @@ const waveformCanvas = document.getElementById('waveform');
 const barMarkers = document.getElementById('bar-markers');
 const playBtn = document.getElementById('play-btn');
 const stopBtn = document.getElementById('stop-btn');
+const recordBtn = document.getElementById('record-btn');
+const recIndicator = document.getElementById('rec-indicator');
+const countdownEl = document.getElementById('countdown');
+const videoContainer = document.getElementById('video-container');
+const video = document.getElementById('video');
 
 let audioContext;
 let audioBuffer;
@@ -15,6 +20,13 @@ let duration = 0;
 let bpm = 120; // Default, can auto-detect with 3rd-party libs
 let bars = 0;
 let secondsPerBar = 0;
+
+// Video recording
+let mediaStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let recBlinkInterval = null;
 
 function resetWaveform() {
   const ctx = waveformCanvas.getContext('2d');
@@ -130,6 +142,7 @@ audioUpload.addEventListener('change', async (e) => {
   if (!file) return;
   playBtn.disabled = true;
   stopBtn.disabled = true;
+  recordBtn.disabled = true;
 
   try {
     const arrBuffer = await fileToArrayBuffer(file);
@@ -141,12 +154,14 @@ audioUpload.addEventListener('change', async (e) => {
 
     playBtn.disabled = false;
     stopBtn.disabled = false;
+    recordBtn.disabled = false;
     pausedAt = 0;
     isPlaying = false;
   } catch (err) {
     alert("Could not decode audio file.");
     playBtn.disabled = true;
     stopBtn.disabled = true;
+    recordBtn.disabled = true;
   }
 });
 
@@ -185,6 +200,9 @@ function stopPlayback() {
     removePlayhead();
     cancelAnimationFrame(animationId);
   }
+  if (isRecording) {
+    stopRecording();
+  }
 }
 
 // Optional: Pause/resume functionality
@@ -207,3 +225,114 @@ waveformCanvas.addEventListener('click', (e) => {
 window.addEventListener('resize', () => {
   if (audioBuffer) drawWaveform(audioBuffer, bpm);
 });
+
+// ----- Video Recording -----
+recordBtn.addEventListener('click', async () => {
+  if (isRecording) return;
+  if (!audioBuffer) return;
+  // Start webcam
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = mediaStream;
+    video.play();
+    await runCountdown(3);
+    startRecording();
+  } catch (err) {
+    alert("Could not access camera.");
+  }
+});
+
+async function runCountdown(n) {
+  countdownEl.classList.remove('hidden');
+  for (let i = n; i > 0; i--) {
+    countdownEl.textContent = i;
+    await new Promise(res => setTimeout(res, 1000));
+  }
+  countdownEl.textContent = 'GO!';
+  await new Promise(res => setTimeout(res, 500));
+  countdownEl.classList.add('hidden');
+}
+
+function startRecording() {
+  isRecording = true;
+  recordedChunks = [];
+  recIndicator.classList.remove('hidden');
+  blinkRecIndicator();
+
+  // Prepare MediaRecorder
+  mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) {
+      recordedChunks.push(e.data);
+    }
+  };
+  mediaRecorder.onstop = () => {
+    stopBlinkRecIndicator();
+    recIndicator.classList.add('hidden');
+    // Optionally: Offer download of recorded video
+    // const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    // const url = URL.createObjectURL(blob);
+    // window.open(url);
+  };
+
+  mediaRecorder.start();
+  // Start audio from beginning, not from pausedAt
+  pausedAt = 0;
+  playBtn.disabled = true;
+  stopBtn.disabled = false;
+  recordBtn.disabled = true;
+  playAudioWithRecording();
+}
+
+function playAudioWithRecording() {
+  if (!audioBuffer) return;
+  isPlaying = true;
+  sourceNode = audioContext.createBufferSource();
+  sourceNode.buffer = audioBuffer;
+  sourceNode.connect(audioContext.destination);
+
+  startTime = audioContext.currentTime;
+  sourceNode.start(0, 0);
+  function step() {
+    if (!isPlaying) return;
+    const currentTime = audioContext.currentTime - startTime;
+    renderPlayhead(currentTime);
+    if (currentTime < duration) {
+      animationId = requestAnimationFrame(step);
+    } else {
+      stopPlayback();
+    }
+  }
+  animationId = requestAnimationFrame(step);
+
+  sourceNode.onended = stopPlayback;
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+  playBtn.disabled = false;
+  recordBtn.disabled = false;
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  if (mediaStream) {
+    let tracks = mediaStream.getTracks();
+    tracks.forEach(track => track.stop());
+    video.srcObject = null;
+  }
+  stopBlinkRecIndicator();
+  recIndicator.classList.add('hidden');
+}
+
+// Blinking REC indicator
+function blinkRecIndicator() {
+  recIndicator.style.visibility = 'visible';
+  recBlinkInterval = setInterval(() => {
+    recIndicator.style.visibility = recIndicator.style.visibility === 'hidden' ? 'visible' : 'hidden';
+  }, 500);
+}
+function stopBlinkRecIndicator() {
+  clearInterval(recBlinkInterval);
+  recIndicator.style.visibility = 'visible';
+}
