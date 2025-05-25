@@ -1,1 +1,23 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Waveform Song Player</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Upload and Visualize Your Song</h1>
+    <input type="file" id="audio-upload" accept="audio/*">
+    <div id="waveform-container">
+      <canvas id="waveform"></canvas>
+      <div id="bar-markers"></div>
+    </div>
+    <div class="controls">
+      <button id="play-btn" disabled>Play</button>
+      <button id="stop-btn" disabled>Stop</button>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
