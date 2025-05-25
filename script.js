@@ -27,6 +27,8 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
 let recBlinkInterval = null;
+let recordedVideoBlob = null;
+let videoSlaveMode = false; // True when video must follow audio controls
 
 function resetWaveform() {
   const ctx = waveformCanvas.getContext('2d');
@@ -37,18 +39,17 @@ function resetWaveform() {
 function drawWaveform(buffer, _bpm = 120) {
   bpm = _bpm;
   duration = buffer.duration;
-  bars = Math.ceil(duration / (60 / bpm * 4)); // 4/4 time
+  bars = Math.ceil(duration / (60 / bpm * 4));
   secondsPerBar = 60 / bpm * 4;
 
-  // Setup canvas for HiDPI screens
   const dpr = window.devicePixelRatio || 1;
   waveformCanvas.width = waveformCanvas.offsetWidth * dpr;
   waveformCanvas.height = waveformCanvas.offsetHeight * dpr;
   const ctx = waveformCanvas.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
   ctx.scale(dpr, dpr);
-
-  // Draw waveform
   ctx.clearRect(0, 0, waveformCanvas.offsetWidth, waveformCanvas.offsetHeight);
+
   ctx.strokeStyle = '#6366f1';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -68,7 +69,6 @@ function drawWaveform(buffer, _bpm = 120) {
   }
   ctx.stroke();
 
-  // Draw 8-bar chunk divisions
   barMarkers.innerHTML = '';
   const totalChunks = Math.ceil(bars / 8);
   for (let chunk = 1; chunk < totalChunks; chunk++) {
@@ -84,7 +84,6 @@ function drawWaveform(buffer, _bpm = 120) {
     marker.style.opacity = '0.45';
     barMarkers.appendChild(marker);
 
-    // Label
     const label = document.createElement('div');
     label.style.position = 'absolute';
     label.style.left = `${x + 2}px`;
@@ -97,7 +96,6 @@ function drawWaveform(buffer, _bpm = 120) {
 }
 
 function renderPlayhead(currentTime) {
-  // Remove old playhead
   let playhead = document.getElementById('playhead');
   if (!playhead) {
     playhead = document.createElement('div');
@@ -128,9 +126,7 @@ async function fileToArrayBuffer(file) {
   });
 }
 
-// Optional: use a BPM detection library or default to 120
 async function estimateBPM(buffer) {
-  // Use a library like web-audio-beat-detector for real detection
   return 120;
 }
 
@@ -148,7 +144,6 @@ audioUpload.addEventListener('change', async (e) => {
     const arrBuffer = await fileToArrayBuffer(file);
     audioBuffer = await audioContext.decodeAudioData(arrBuffer);
 
-    // Optionally estimate BPM here
     const detectedBPM = await estimateBPM(audioBuffer);
     drawWaveform(audioBuffer, detectedBPM);
 
@@ -157,6 +152,17 @@ audioUpload.addEventListener('change', async (e) => {
     recordBtn.disabled = false;
     pausedAt = 0;
     isPlaying = false;
+
+    // If there is a recorded video, set it as the video source
+    if (recordedVideoBlob) {
+      setRecordedVideoAsSource();
+    } else {
+      video.srcObject = null;
+      video.src = "";
+      video.removeAttribute('controls');
+      video.setAttribute('muted', '');
+      video.pause();
+    }
   } catch (err) {
     alert("Could not decode audio file.");
     playBtn.disabled = true;
@@ -167,27 +173,31 @@ audioUpload.addEventListener('change', async (e) => {
 
 playBtn.addEventListener('click', () => {
   if (!audioBuffer || isPlaying) return;
-  isPlaying = true;
-  sourceNode = audioContext.createBufferSource();
-  sourceNode.buffer = audioBuffer;
-  sourceNode.connect(audioContext.destination);
+  if (recordedVideoBlob && !isRecording) {
+    playRecordedVideoWithAudio();
+  } else {
+    isPlaying = true;
+    sourceNode = audioContext.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    sourceNode.connect(audioContext.destination);
 
-  startTime = audioContext.currentTime - pausedAt;
-  sourceNode.start(0, pausedAt);
+    startTime = audioContext.currentTime - pausedAt;
+    sourceNode.start(0, pausedAt);
 
-  function step() {
-    if (!isPlaying) return;
-    const currentTime = audioContext.currentTime - startTime;
-    renderPlayhead(currentTime);
-    if (currentTime < duration) {
-      animationId = requestAnimationFrame(step);
-    } else {
-      stopPlayback();
+    function step() {
+      if (!isPlaying) return;
+      const currentTime = audioContext.currentTime - startTime;
+      renderPlayhead(currentTime);
+      if (currentTime < duration) {
+        animationId = requestAnimationFrame(step);
+      } else {
+        stopPlayback();
+      }
     }
-  }
-  animationId = requestAnimationFrame(step);
+    animationId = requestAnimationFrame(step);
 
-  sourceNode.onended = stopPlayback;
+    sourceNode.onended = stopPlayback;
+  }
 });
 
 stopBtn.addEventListener('click', stopPlayback);
@@ -203,9 +213,12 @@ function stopPlayback() {
   if (isRecording) {
     stopRecording();
   }
+  if (videoSlaveMode && recordedVideoBlob) {
+    video.pause();
+    video.currentTime = 0;
+  }
 }
 
-// Optional: Pause/resume functionality
 waveformCanvas.addEventListener('click', (e) => {
   if (!audioBuffer) return;
   const rect = waveformCanvas.getBoundingClientRect();
@@ -218,19 +231,20 @@ waveformCanvas.addEventListener('click', (e) => {
   } else {
     pausedAt = seekTime;
     renderPlayhead(pausedAt);
+    if (videoSlaveMode && recordedVideoBlob) {
+      video.currentTime = pausedAt;
+    }
   }
 });
 
-// Responsive resizing
 window.addEventListener('resize', () => {
   if (audioBuffer) drawWaveform(audioBuffer, bpm);
 });
 
-// ----- Video Recording -----
+// Video Recording
 recordBtn.addEventListener('click', async () => {
   if (isRecording) return;
   if (!audioBuffer) return;
-  // Start webcam
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     video.srcObject = mediaStream;
@@ -258,8 +272,9 @@ function startRecording() {
   recordedChunks = [];
   recIndicator.classList.remove('hidden');
   blinkRecIndicator();
+  recordedVideoBlob = null;
+  videoSlaveMode = false;
 
-  // Prepare MediaRecorder
   mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) {
@@ -269,14 +284,18 @@ function startRecording() {
   mediaRecorder.onstop = () => {
     stopBlinkRecIndicator();
     recIndicator.classList.add('hidden');
-    // Optionally: Offer download of recorded video
-    // const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    // const url = URL.createObjectURL(blob);
-    // window.open(url);
+    // Save and display the recorded video
+    recordedVideoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+    setRecordedVideoAsSource();
+    videoSlaveMode = true;
+    playBtn.disabled = false;
+    stopBtn.disabled = false;
+    recordBtn.disabled = false;
   };
 
   mediaRecorder.start();
-  // Start audio from beginning, not from pausedAt
+
+  // Sync: as soon as video starts recording, play audio too
   pausedAt = 0;
   playBtn.disabled = true;
   stopBtn.disabled = false;
@@ -284,20 +303,82 @@ function startRecording() {
   playAudioWithRecording();
 }
 
-function playAudioWithRecording() {
-  if (!audioBuffer) return;
+function setRecordedVideoAsSource() {
+  if (recordedVideoBlob) {
+    video.srcObject = null;
+    video.src = URL.createObjectURL(recordedVideoBlob);
+    video.load();
+    video.currentTime = 0;
+    video.removeAttribute('muted');
+    video.setAttribute('controls', '');
+    video.pause();
+    // Slave: when video time updates, move playhead (only in slave mode)
+    video.onseeked = () => {
+      if (videoSlaveMode && audioBuffer) {
+        pausedAt = video.currentTime;
+        renderPlayhead(pausedAt);
+      }
+    };
+    video.onplay = () => {
+      if (videoSlaveMode && !isPlaying) {
+        isPlaying = true;
+        playRecordedVideoWithAudio();
+      }
+    };
+    video.onpause = () => {
+      if (videoSlaveMode && isPlaying) {
+        stopPlayback();
+      }
+    };
+  }
+}
+
+function playRecordedVideoWithAudio() {
+  if (!recordedVideoBlob || !audioBuffer) return;
+  videoSlaveMode = true;
+  // Play the video and sync audio to its currentTime
+  video.currentTime = pausedAt;
+  video.play();
   isPlaying = true;
+
   sourceNode = audioContext.createBufferSource();
   sourceNode.buffer = audioBuffer;
   sourceNode.connect(audioContext.destination);
+  startTime = audioContext.currentTime - video.currentTime;
+  sourceNode.start(0, video.currentTime);
 
+  function step() {
+    if (!isPlaying) return;
+    const currentTime = audioContext.currentTime - startTime;
+    renderPlayhead(currentTime);
+    if (currentTime < duration && !video.paused) {
+      animationId = requestAnimationFrame(step);
+    } else {
+      stopPlayback();
+    }
+  }
+  animationId = requestAnimationFrame(step);
+
+  sourceNode.onended = () => {
+    stopPlayback();
+  };
+}
+
+function playAudioWithRecording() {
+  if (!audioBuffer) return;
+  isPlaying = true;
+  video.currentTime = 0;
+  video.play();
+  sourceNode = audioContext.createBufferSource();
+  sourceNode.buffer = audioBuffer;
+  sourceNode.connect(audioContext.destination);
   startTime = audioContext.currentTime;
   sourceNode.start(0, 0);
   function step() {
     if (!isPlaying) return;
     const currentTime = audioContext.currentTime - startTime;
     renderPlayhead(currentTime);
-    if (currentTime < duration) {
+    if (currentTime < duration && !video.paused) {
       animationId = requestAnimationFrame(step);
     } else {
       stopPlayback();
@@ -325,12 +406,12 @@ function stopRecording() {
   recIndicator.classList.add('hidden');
 }
 
-// Blinking REC indicator
+// Blinking REC indicator (now slower: 2s)
 function blinkRecIndicator() {
   recIndicator.style.visibility = 'visible';
   recBlinkInterval = setInterval(() => {
     recIndicator.style.visibility = recIndicator.style.visibility === 'hidden' ? 'visible' : 'hidden';
-  }, 500);
+  }, 1000);
 }
 function stopBlinkRecIndicator() {
   clearInterval(recBlinkInterval);
