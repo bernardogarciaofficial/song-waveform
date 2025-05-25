@@ -132,7 +132,7 @@ async function estimateBPM(buffer) {
 
 audioUpload.addEventListener('change', async (e) => {
   resetWaveform();
-  if (audioContext) audioContext.close();
+  if (audioContext) audioContext && audioContext.close();
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   const file = e.target.files[0];
   if (!file) return;
