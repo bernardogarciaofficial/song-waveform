@@ -54,6 +54,10 @@ h1 {
   pointer-events: none;
 }
 
+.controls {
+  margin-bottom: 16px;
+}
+
 .controls button {
   background: #6366f1;
   color: #fff;
@@ -73,4 +77,54 @@ h1 {
 
 .controls button:not([disabled]):hover {
   background: #4f46e5;
+}
+
+#rec-indicator {
+  font-weight: bold;
+  color: #f00;
+  margin-left: 20px;
+  font-size: 1.1em;
+  vertical-align: middle;
+  animation: blink 1s steps(1, start) infinite;
+}
+
+.hidden {
+  display: none;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+#countdown {
+  font-size: 2.5em;
+  font-weight: bold;
+  color: #facc15;
+  margin: 10px 0;
+  animation: pop 0.3s;
+}
+
+@keyframes pop {
+  0% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
+#video-container {
+  margin: 0 auto 0 auto;
+  max-width: 560px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+
+#video {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  background: #000;
 }
