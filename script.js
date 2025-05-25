@@ -132,7 +132,7 @@ async function estimateBPM(buffer) {
 
 audioUpload.addEventListener('change', async (e) => {
   resetWaveform();
-  if (audioContext) audioContext && audioContext.close();
+  if (audioContext) await audioContext.close();
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   const file = e.target.files[0];
   if (!file) return;
@@ -303,6 +303,34 @@ function startRecording() {
   playAudioWithRecording();
 }
 
+async function playAudioWithRecording() {
+  if (!audioBuffer) return;
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+  isPlaying = true;
+  video.currentTime = 0;
+  video.play();
+  sourceNode = audioContext.createBufferSource();
+  sourceNode.buffer = audioBuffer;
+  sourceNode.connect(audioContext.destination);
+  startTime = audioContext.currentTime;
+  sourceNode.start(0, 0);
+  function step() {
+    if (!isPlaying) return;
+    const currentTime = audioContext.currentTime - startTime;
+    renderPlayhead(currentTime);
+    if (currentTime < duration && !video.paused) {
+      animationId = requestAnimationFrame(step);
+    } else {
+      stopPlayback();
+    }
+  }
+  animationId = requestAnimationFrame(step);
+
+  sourceNode.onended = stopPlayback;
+}
+
 function setRecordedVideoAsSource() {
   if (recordedVideoBlob) {
     video.srcObject = null;
@@ -362,31 +390,6 @@ function playRecordedVideoWithAudio() {
   sourceNode.onended = () => {
     stopPlayback();
   };
-}
-
-function playAudioWithRecording() {
-  if (!audioBuffer) return;
-  isPlaying = true;
-  video.currentTime = 0;
-  video.play();
-  sourceNode = audioContext.createBufferSource();
-  sourceNode.buffer = audioBuffer;
-  sourceNode.connect(audioContext.destination);
-  startTime = audioContext.currentTime;
-  sourceNode.start(0, 0);
-  function step() {
-    if (!isPlaying) return;
-    const currentTime = audioContext.currentTime - startTime;
-    renderPlayhead(currentTime);
-    if (currentTime < duration && !video.paused) {
-      animationId = requestAnimationFrame(step);
-    } else {
-      stopPlayback();
-    }
-  }
-  animationId = requestAnimationFrame(step);
-
-  sourceNode.onended = stopPlayback;
 }
 
 function stopRecording() {
