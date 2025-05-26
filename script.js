@@ -1,21 +1,29 @@
-// Assuming variables: recordBtn, isRecording, audioBuffer, mediaStream, video, runCountdown, startRecording, recIndicator, blinkRecIndicator, stopBlinkRecIndicator, recordedChunks, recordedVideoBlob, videoSlaveMode, playBtn, stopBtn, playAudioWithRecording, setRecordedVideoAsSource, pausedAt
+const video = document.getElementById('video');
+const recordBtn = document.getElementById('recordBtn');
+const playBtn = document.getElementById('playBtn');
+const stopBtn = document.getElementById('stopBtn');
+const recIndicator = document.getElementById('recIndicator');
+
+let mediaStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordedVideoBlob = null;
+let isRecording = false;
 
 recordBtn.addEventListener('click', async () => {
   if (isRecording) return;
-  if (!audioBuffer) return;
-  // Request camera access first
+
   try {
-    // Check MediaRecorder API support
     if (!window.MediaRecorder) {
       alert("MediaRecorder API not supported in this browser.");
       return;
     }
-    // Request camera
-    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     video.srcObject = mediaStream;
+    video.muted = true;
     await video.play();
-    await runCountdown(3);
-    startRecording(); // will start both video & audio in sync
+    recIndicator.classList.remove('hidden');
+    startRecording();
   } catch (err) {
     alert("Could not access camera. Make sure you use HTTPS and allow camera access.");
   }
@@ -24,12 +32,11 @@ recordBtn.addEventListener('click', async () => {
 function startRecording() {
   isRecording = true;
   recordedChunks = [];
-  recIndicator.classList.remove('hidden');
-  blinkRecIndicator();
   recordedVideoBlob = null;
-  videoSlaveMode = false;
+  playBtn.disabled = true;
+  stopBtn.disabled = false;
+  recordBtn.disabled = true;
 
-  // Setup MediaRecorder
   mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) {
@@ -37,22 +44,34 @@ function startRecording() {
     }
   };
   mediaRecorder.onstop = () => {
-    stopBlinkRecIndicator();
     recIndicator.classList.add('hidden');
     recordedVideoBlob = new Blob(recordedChunks, { type: 'video/webm' });
-    setRecordedVideoAsSource();
-    videoSlaveMode = true;
+    video.srcObject = null;
+    video.src = URL.createObjectURL(recordedVideoBlob);
+    video.controls = true;
+    video.muted = false;
     playBtn.disabled = false;
-    stopBtn.disabled = false;
+    stopBtn.disabled = true;
     recordBtn.disabled = false;
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+    }
   };
-
   mediaRecorder.start();
-
-  // Play audio in sync with video
-  pausedAt = 0;
-  playBtn.disabled = true;
-  stopBtn.disabled = false;
-  recordBtn.disabled = true;
-  playAudioWithRecording();
 }
+
+stopBtn.addEventListener('click', () => {
+  if (isRecording && mediaRecorder) {
+    mediaRecorder.stop();
+    isRecording = false;
+  }
+});
+
+playBtn.addEventListener('click', () => {
+  if (recordedVideoBlob) {
+    video.srcObject = null;
+    video.src = URL.createObjectURL(recordedVideoBlob);
+    video.play();
+  }
+});
