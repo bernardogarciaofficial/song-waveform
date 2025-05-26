@@ -2,26 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Waveform Song Player</title>
+  <title>Video Recorder/Player</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
-    <h1>Upload and Visualize Your Song</h1>
-    <input type="file" id="audio-upload" accept="audio/*">
-    <div id="waveform-container">
-      <canvas id="waveform"></canvas>
-      <div id="bar-markers"></div>
-    </div>
+    <video id="video" controls autoplay muted></video>
     <div class="controls">
-      <button id="play-btn" disabled>Play</button>
-      <button id="stop-btn" disabled>Stop</button>
-      <button id="record-btn" disabled>Record</button>
-      <span id="rec-indicator" class="hidden">● REC</span>
-    </div>
-    <div id="countdown" class="hidden"></div>
-    <div id="video-container">
-      <video id="video" width="1280" height="720" playsinline controls></video>
+      <button id="recordBtn">Record</button>
+      <button id="playBtn" disabled>Play</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <span id="recIndicator" class="hidden">● REC</span>
     </div>
   </div>
   <script src="script.js"></script>
